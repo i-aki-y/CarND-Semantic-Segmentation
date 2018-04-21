@@ -1,4 +1,8 @@
 import os.path
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+
 import tensorflow as tf
 import helper
 import warnings
@@ -55,27 +59,32 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     :return: The Tensor for the last layer of output
     """
     # TODO: Implement function
+    stddev = 0.01
+    regscale = 1.0e-3
     conv7_1x1 = tf.layers.conv2d(vgg_layer7_out, num_classes, 1, (1, 1), padding='SAME',
-                                kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(regscale),
+                                 kernel_initializer = tf.truncated_normal_initializer(stddev = stddev))
     conv4_1x1 = tf.layers.conv2d(vgg_layer4_out, num_classes, 1, (1, 1), padding='SAME',
-                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(regscale),
+                                 kernel_initializer = tf.truncated_normal_initializer(stddev = stddev))
     conv3_1x1 = tf.layers.conv2d(vgg_layer3_out, num_classes, 1, (1, 1), padding='SAME',
-                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(regscale),
+                                 kernel_initializer = tf.truncated_normal_initializer(stddev = stddev))
 
     # upsampling
     output = tf.layers.conv2d_transpose(conv7_1x1, num_classes, 4, 2, padding='SAME',
-                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(regscale))
     # skip connection
     output = tf.add(output, conv4_1x1)
     # upsampling
     output = tf.layers.conv2d_transpose(output, num_classes, 4, 2, padding='SAME',
-                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(regscale))
 
     # skip connection
     output = tf.add(output, conv3_1x1)
     # upsampling
     output = tf.layers.conv2d_transpose(output, num_classes, 16, 8, padding='SAME',
-                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(regscale))
 
     return output
 tests.test_layers(layers)
@@ -93,7 +102,14 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     # TODO: Implement function
     logits = tf.reshape(nn_last_layer, (-1, num_classes))
     correct_label = tf.reshape(correct_label, (-1, num_classes))
+
     cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=correct_label))
+
+    # regularization loss
+    reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+    reg_const = 0.03
+    cross_entropy_loss = cross_entropy_loss + reg_const * sum(reg_losses)
+
     opt = tf.train.AdagradOptimizer(learning_rate).minimize(cross_entropy_loss)
     return logits, opt, cross_entropy_loss
 tests.test_optimize(optimize)
@@ -115,8 +131,8 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param learning_rate: TF Placeholder for learning rate
     """
     # TODO: Implement function
-    kp = 0.5
-    lr = 0.005
+    kp = 0.25
+    lr = 0.01
     for epoch in range(epochs):
         for image, label in get_batches_fn(batch_size):
             _, loss = sess.run([train_op, cross_entropy_loss], feed_dict={
@@ -134,7 +150,7 @@ def run():
     num_classes = 2
     image_shape = (160, 576)
     data_dir = './data'
-    runs_dir = './runs'
+    runs_dir = './data/runs'
     tests.test_for_kitti_dataset(data_dir)
 
     # Download pretrained vgg model
@@ -144,8 +160,8 @@ def run():
     # You'll need a GPU with at least 10 teraFLOPS to train on.
     #  https://www.cityscapes-dataset.com/
 
-    epochs = 1
-    batch_size = 32
+    epochs = 25
+    batch_size = 16
     with tf.Session() as sess:
         # Path to vgg model
         vgg_path = os.path.join(data_dir, 'vgg')
@@ -169,7 +185,7 @@ def run():
                  correct_label, keep_prob, learning_rate)
 
         # TODO: Save inference data using helper.save_inference_samples
-        #helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
+        helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, image_input)
 
         # OPTIONAL: Apply the trained model to a video
 
